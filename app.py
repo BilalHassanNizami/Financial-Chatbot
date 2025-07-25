@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[2]:
+# In[5]:
 
 
 import pandas as pd
@@ -20,9 +20,32 @@ metrics_list = df['Metric'].str.lower().unique()
 all_years = [2022, 2023, 2024]
 default_companies = ["tesla", "apple", "microsoft"]
 
-# Aliases (cleaned to remove duplicates)
+# Company aliases
+company_aliases = {
+    "tsla": "tesla",
+    "ts": "tesla",
+    "tsa": "tesla",
+    "tesla": "tesla",
+
+    "aapl": "apple",
+    "appl": "apple",
+    "ap": "apple",
+    "aple": "apple",
+    "apple": "apple",
+
+    "ms": "microsoft",
+    "msft": "microsoft",
+    "mcsft": "microsoft",
+    "msoft": "microsoft",
+    "mcrsft": "microsoft",
+    "mcrosft": "microsoft",
+    "microsft": "microsoft",
+    "microsoft": "microsoft"
+}
+
+# Metric aliases
 alias_dict = {
-   "revenue": "total revenue",
+    "revenue": "total revenue",
     "rvnu": "total revenue",
     "revnu": "total revenue",
     "revenu": "total revenue",
@@ -51,12 +74,19 @@ alias_dict = {
     "r&d est": "r&d expense (est.)",
     "r&d estimate": "r&d expense (est.)",
     "assets": "total assets",
+    "ast": "total assets",
+    "asset": "total assets",
+    "asets": "total assets",
+    "aset": "total assets",
     "liabilities": "total liabilities",
+    "liab": "total liabilities",
+    "liabiliti": "total liabilities",
+    "liability": "total liabilities",
+    "lia": "total liabilities",
     "debt": "total liabilities",
     "equity": "shareholders' equity",
     "shareholder equity": "shareholders' equity",
     "cash equivalent": "cash & cash equivalents",
-    "cash equivalents": "cash & cash equivalent",
     "cash equivalents": "cash & cash equivalents",
     "cash eq": "cash & cash equivalents",
     "cash equi": "cash & cash equivalents",
@@ -69,9 +99,7 @@ alias_dict = {
     "capital expense": "capital expenditures",
     "cap exp": "capital expenditures",
     "cap expenditure": "capital expenditures",
-    "cap expenditures": "capital expenditures",
-    "capital expenditure": "capital expenditures",
-    "capital expenditures": "capital expenditure",
+    "capital expenditures": "capital expenditures",
     "free cash flow": "free cash flow (est.)",
     "cash flow": "free cash flow (est.)",
     "estimated free cash": "free cash flow (est.)",
@@ -80,12 +108,11 @@ alias_dict = {
     "fcf": "free cash flow (est.)",
     "eps bas": "eps (basic)",
     "eps basic": "eps (basic)",
-    "eps diluted": "eps dil",
-    "eps (diluted)": "eps dil",
-    "eps dil": "eps (diluted)",
     "eps diluted": "eps (diluted)",
+    "eps (diluted)": "eps (diluted)",
+    "eps dil": "eps (diluted)",
     "cloud": "cloud revenue",
-    "cloud revenue": "cloud revenue",
+    "cloud revenue": "cloud revenue"
 }
 
 # Enhanced year phrase mapping
@@ -93,11 +120,9 @@ def extract_years(message):
     years = []
     message = message.lower()
 
-    # Regex year detection
     year_matches = re.findall(r"\b(2022|2023|2024)\b", message)
     years.extend([int(y) for y in year_matches])
 
-    # Phrase-based mappings
     if any(phrase in message for phrase in ["all years", "last 3 years", "since 2022", "past 3 years"]):
         return [2022, 2023, 2024]
     if any(phrase in message for phrase in ["last two years", "last 2 years", "past 2 years", "since 2023", "second and third year", "2nd and 3rd year", "second and last year"]):
@@ -122,9 +147,12 @@ def plot_bar_chart(company_df, metric, year):
     fig.update_layout(template='plotly_white', uniformtext_minsize=8, uniformtext_mode='show')
     return fig
 
-def plot_comparison_chart(metric, years):
+def plot_comparison_chart(metric, years, companies):
     chart_data = []
-    for _, row in df[df['Metric'].str.lower() == metric].iterrows():
+    for _, row in df[
+        (df['Metric'].str.lower() == metric) &
+        (df['Company'].str.lower().isin(companies))
+    ].iterrows():
         company = row["Company"]
         for year in years:
             val = row.get(str(year))
@@ -157,15 +185,15 @@ def handle_message(message, history):
 
     message = message.lower()
 
-    # Companies
-    companies = re.findall(r"\b(tesla|apple|microsoft)\b", message)
+    # Match company aliases
+    raw_companies = re.findall(r"\b[a-z]{2,10}\b", message)
+    companies = [company_aliases[c] for c in raw_companies if c in company_aliases]
+
     if not companies or any(phrase in message for phrase in ["all companies", "compare companies"]):
         companies = default_companies
 
-    # Years
     years = extract_years(message)
 
-    # Metric
     metric_match = [m for m in metrics_list if m in message]
     if not metric_match:
         for alias, standard in alias_dict.items():
@@ -178,7 +206,6 @@ def handle_message(message, history):
         reply = "❌ Please mention a valid financial metric (e.g., revenue, EPS, R&D)."
         return history + [{"role": "user", "content": message}, {"role": "assistant", "content": reply}], "", None
 
-    # Filter Data
     filtered_df = df[
         (df['Metric'].str.lower() == metric) &
         (df['Company'].str.lower().isin(companies))
@@ -188,7 +215,6 @@ def handle_message(message, history):
         reply = "❌ No matching data found for the given metric and companies."
         return history + [{"role": "user", "content": message}, {"role": "assistant", "content": reply}], "", None
 
-    # Text Reply
     lines = [f"📊 **{metric.title()} Comparison**:"]
     for company in companies:
         sub = filtered_df[filtered_df["Company"].str.lower() == company]
@@ -206,11 +232,8 @@ def handle_message(message, history):
                 lines.append(f"{year}: Data not available")
 
     reply = "\n".join(lines)
+    chart = plot_comparison_chart(metric, years, companies)
 
-    # Chart
-    chart = plot_comparison_chart(metric, years)
-
-    # Final Output
     history = history + [
         {"role": "user", "content": message},
         {"role": "assistant", "content": reply}
